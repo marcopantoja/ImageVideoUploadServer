@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo & Video Upload</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180x180.png">
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Ponomar&family=Scope+One&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #ebe6d6;
+      font-family: "Scope One", serif;
+      font-size: large;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      text-align: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .form-heading-container {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      width: 40vw;
+      margin-top: 5vh;
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    .form-entry-container {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      width: 40vw;
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+      margin-top: 20px;
+    }
+    .form-title {
+      font-family: "Great Vibes", cursive;
+      font-size: xxx-large;
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: 200;
+    }
+    .instruct {
+      font-family: "Ponomar", sans-serif;
+      font-size: x-large;
+      width: 100%;
+      font-weight: 300;
+    }
+    .file-list-display {
+      background-color: white;
+      border: none;
+      padding: 10px;
+      font-family: "Scope One", serif;
+      white-space: pre-wrap;
+      text-align: center;
+      width: 40vw;
+      margin: auto;
+      margin-top: 1vh;
+      display: none;
+    }
+    .hidden {
+      display: none;
+    }
+    .error-text {
+      color: red;
+      display: none;
+    }
+    .styled-upload-button {
+      width: 25%;
+      background-color: #6378ff;
+      color: white;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: medium;
+      cursor: pointer;
+      margin-top: 15px;
+      margin-right: 15px;
+      margin-bottom: 30px;
+      display: inline-block;
+      text-align: center;
+      font-family: "Scope One", serif;
+      font-weight: 700;
+    }
+    .styled-upload-button:hover {
+      background-color: #5751d1;
+    }
+    .styled-upload-button:active {
+      background-color: #3a4ec9;
+    }
+    button {
+      width: 20%;
+      background-color: #6378ff;
+      color: white;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: medium;
+      cursor: pointer;
+      margin-top: 15px;
+      margin-right: 15px;
+      margin-bottom: 30px;
+      font-family: "Scope One", serif;
+      font-weight: 700;
+    }
+    button:hover {
+      background-color: #5751d1;
+    }
+    button:active {
+      background-color: #3a4ec9;
+    }
+    .progress-container {
+      width: 100%;
+      text-align: left;
+      text-indent: 2%;
+      font-family: "Scope One", serif;
+      background-color: rgba(127, 181, 235, 0.34);
+      margin-top: 10px;
+      border-radius: 6px;
+      height: 2vh;
+      display: none;
+    }
+    .progress-bar {
+      height: 20px;
+      width: 0%;
+      background-color: #4caf50;
+      text-align: center;
+      line-height: 20px;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="form-heading-container">
+    <h1 class="form-title">Share Your Memories</h1>
+    <p>We would love to see all of your favorite moments, so please feel free to upload as many images or videos as you'd like.</p>
+    <p>Thank you!</p>
+  </div>
+  <div class="form-entry-container">
+    <h2 class="instruct">Upload Files</h3>
+    <form id="uploadForm">
+      <input type="hidden" id="authKey" name="authKey" value="{{authKey}}">
+      <label for="fileUpload" class="styled-upload-button">Select File(s)</label>
+      <input type="file" id="fileUpload" name="files" multiple style="display: none;" />
+    </form>
+    <button type="submit" id="uploadButton">Upload</button>
+    <div class="progress-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <pre id="fileList" class="file-list-display"></pre>
+  </div>
+
+  <script>
+    const loader = document.getElementById("loader");
+    const overlay = document.getElementById("overlay");
+    const fUpload = document.getElementById("fileUpload");
+    const fList = document.getElementById("fileList");
+    const uploadBtn = document.getElementById("uploadButton");
+    const progressBar = document.getElementById("progressBar");
+    fUpload.addEventListener("change", () => {
+      const files = [...fUpload.files];
+      if (files.length === 0) {
+        fList.textContent = "";
+        uploadBtn.disabled = true;
+      } else {
+        fList.textContent = files.map(f => `${f.name},`).join("\n");
+        uploadBtn.disabled = false;
+        fList.style.display = "block";
+      }
+    });
+    uploadBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+
+      const files = [...fUpload.files];
+      const authKey = document.getElementById("authKey").value.trim();
+
+      if (!authKey || files.length === 0) {
+        alert("Please enter your key and select at least one file.");
+        return;
+      }
+      progressBar.style.display = "block";
+      const formData = new FormData();
+      formData.append("authKey", authKey);
+      files.forEach(file => formData.append("files", file));
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/upload");
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          progressBar.style.width = percent + "%";
+          progressBar.h
+          progressBar.textContent = "Loading..." + percent + "%";
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          alert("Upload complete!");
+          fUpload.value = "";
+          fList.textContent = "";
+          progressBar.style.width = "0%";
+          progressBar.textContent = "";
+        } else {
+          alert("Upload failed: " + xhr.responseText);
+        }
+      };
+
+      xhr.onerror = () => alert("Error uploading files.");
+      xhr.send(formData);
+    });
+  </script>
+</body>
+</html>

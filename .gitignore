@@ -1,0 +1,5 @@
+uploads/*
+node_modules
+*.config.js
+log.json
+*.csv
