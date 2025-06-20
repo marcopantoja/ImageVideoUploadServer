@@ -43,9 +43,9 @@ await app.register(multipart);
 await app.register(staticPlugin, {
   root: path.join(__dirname, 'public'),
   prefix: '/',
-  setHeaders: (res, path) => {
-    if (path.endsWith('.js') || path.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
+  setHeaders: (res, filepath) => {
+    if (/\.(js|css|woff2?)$/.test(filepath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
   }
 });
