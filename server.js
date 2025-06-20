@@ -135,30 +135,6 @@ app.get('/upload-status', async (req, reply) => {
 });
 
 // Upload endpoints
-app.post('/upload-chunk', async (req, reply) => {
-  const parts = req.parts();
-  let uploadId = null;
-  let chunkIndex = null;
-
-  for await (const part of parts) {
-    if (part.type === 'field') {
-      if (part.fieldname === 'uploadId') uploadId = part.value.trim();
-      if (part.fieldname === 'chunkIndex') chunkIndex = parseInt(part.value, 10);
-    } else if (part.type === 'file') {
-      if (!uploadId || chunkIndex === null) {
-        return reply.status(400).send({ error: 'Missing uploadId or chunkIndex' });
-      }
-
-      const tmpPath = getChunkPath(uploadId, chunkIndex);
-      const stream = fs.createWriteStream(tmpPath);
-      await part.file.pipe(stream);
-      await new Promise(r => stream.on('finish', r));
-    }
-  }
-
-  reply.send({ received: true });
-});
-
 app.post('/upload-manifest', async (req, reply) => {
   const parts = req.parts();
   let manifest = null;
