@@ -45,8 +45,6 @@ await app.register(staticPlugin, {
   prefix: '/',
 });
 
-await registerChunkRoutes(app, users, getFileHash, getNextFileName, uploadLog, logFile);
-
 // Helper: Load users into memory
 const users = {};
 fs.createReadStream(authFile)
@@ -57,6 +55,8 @@ fs.createReadStream(authFile)
   .on('end', () => {
     console.log('Users loaded:', Object.keys(users).length);
   });
+  
+await registerChunkRoutes(app, users, getFileHash, getNextFileName, uploadLog, logFile);
 
 // Helper: Load upload log
 let uploadLog = [];
