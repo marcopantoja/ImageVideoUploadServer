@@ -10,6 +10,7 @@ import { pipeline } from 'stream/promises';
 import { fileURLToPath } from 'url';
 import { registerChunkRoutes } from './backend/chunkHandler.js';
 import { startCleanupService } from './backend/cleanup.js';
+import fastifyHelmet from '@fastify/helmet';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,6 +46,22 @@ await app.register(staticPlugin, {
   setHeaders: (res, path) => {
     if (path.endsWith('.js') || path.endsWith('.css')) {
       res.setHeader('Cache-Control', 'public, max-age=31536000');
+    }
+  }
+});
+await app.register(fastifyHelmet, {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      imgSrc: ["'self'", 'data:'],
+      frameAncestors: [//iframe embedding
+        "'self'", 
+        'https://sites.google.com',
+        'https://lh6.googleusercontent.com'
+      ]
     }
   }
 });
