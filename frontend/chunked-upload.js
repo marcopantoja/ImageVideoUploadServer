@@ -1,6 +1,5 @@
 // frontend/chunked-upload.js
 import { zipSync } from 'fflate';
-import { prepareChunks } from './chunked-upload.js';
 
 const MAX_CHUNK_SIZE = 80 * 1024 * 1024;
 const MAX_WORKERS = 4;
