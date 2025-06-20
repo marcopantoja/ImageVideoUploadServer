@@ -56,8 +56,6 @@ fs.createReadStream(authFile)
     console.log('Users loaded:', Object.keys(users).length);
   });
   
-await registerChunkRoutes(app, users, getFileHash, getNextFileName, uploadLog, logFile);
-
 // Helper: Load upload log
 let uploadLog = [];
 if (fs.existsSync(logFile)) {
@@ -268,6 +266,8 @@ app.post('/upload', async (req, reply) => {
   fs.writeFileSync(logFile, JSON.stringify(uploadLog, null, 2));
   reply.send({ success: true, files: savedFiles });
 });
+
+await registerChunkRoutes(app, users, getFileHash, getNextFileName, uploadLog, logFile);
 
 // Launch
 app.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
