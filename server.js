@@ -1,4 +1,5 @@
 // server.js
+import fastifyHelmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import staticPlugin from '@fastify/static';
 import crypto from 'crypto';
@@ -10,7 +11,6 @@ import { pipeline } from 'stream/promises';
 import { fileURLToPath } from 'url';
 import { registerChunkRoutes } from './backend/chunkHandler.js';
 import { startCleanupService } from './backend/cleanup.js';
-import fastifyHelmet from '@fastify/helmet';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
