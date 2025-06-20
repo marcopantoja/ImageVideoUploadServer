@@ -57,13 +57,21 @@ The key is embedded into the HTML form dynamically and passed with the upload. T
 
 ```
 /mnt/ssd/FileUploadServer/
-├── server.js                # Fastify backend
-├── public/
-│   └── index.html           # Upload form
-├── uploads/                 # Saved media files
-├── users.csv                # List of authorized users
-├── upload-log.json          # Track saved files
-└── favicon.ico              # Website icon
+├── server.js                  # Fastify backend logic
+├── backend/                   # Chunk + cleanup logic
+│   ├── chunkHandler.js
+│   └── cleanup.js
+├── public/                    # HTML frontend + client JS
+│   ├── index.html
+│   └── chunked-upload.js
+├── uploads/
+│   ├── tmp/                   # Simple uploads before renaming
+│   ├── tmp_chunks/           # Chunked uploads
+│   └── merged/               # Finalized files
+├── manifests/                # Upload manifests
+├── users.csv                 # AuthKey user database
+├── upload_log.json           # Saved file metadata
+└── package.json
 ```
 
 ---
@@ -112,7 +120,9 @@ Create a `config.yml` to run on boot via systemd.
 
 - Edit `/public/index.html` for branding/styling
 - Customize file naming logic
+- Extend chunkHandler.js for logging, email hooks, or virus scanning
 - Extend logging or add email notifications
+- Tweak cleanup window in cleanup.js
 
 ---
 

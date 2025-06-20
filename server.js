@@ -11,7 +11,6 @@ import { fileURLToPath } from 'url';
 import { registerChunkRoutes } from './backend/chunkHandler.js';
 import { startCleanupService } from './backend/cleanup.js';
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -43,6 +42,11 @@ await app.register(multipart);
 await app.register(staticPlugin, {
   root: path.join(__dirname, 'public'),
   prefix: '/',
+  setHeaders: (res, path) => {
+    if (path.endsWith('.js') || path.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    }
+  }
 });
 
 // Helper: Load users into memory
@@ -238,10 +242,9 @@ app.post('/upload', async (req, reply) => {
     });
     savedFiles.push(path.basename(finalPath));
   }
-
-  fs.writeFileSync(logFile, JSON.stringify(uploadLog, null, 2));
-  reply.send({ success: true, files: savedFiles });
-});
+    fs.writeFileSync(logFile, JSON.stringify(uploadLog, null, 2));
+    reply.send({ success: true, files: savedFiles });
+  });
 
 await registerChunkRoutes(app, users, getFileHash, getNextFileName, uploadLog, logFile);
 
