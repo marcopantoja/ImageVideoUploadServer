@@ -115,23 +115,34 @@
       background-color: #3a4ec9;
     }
     .progress-container {
+      display: flex;
+      align-items: center;
+      margin: 10px 0;
+      background: white;
+      padding: 5px;
+      border-radius: 8px;
+      box-shadow: 0 0 3px #aaa;
+    }
+    .progress-thumb {
+      display: flex;
+      align-items: center;
       width: 100%;
-      text-align: left;
-      text-indent: 2%;
-      font-family: "Scope One", serif;
-      background-color: rgba(127, 181, 235, 0.34);
-      margin-top: 10px;
-      border-radius: 6px;
-      height: 2vh;
-      display: none;
+    }
+    .thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-right: 10px;
     }
     .progress-bar {
-      height: 20px;
-      width: 0%;
       background-color: #4caf50;
-      text-align: center;
-      line-height: 20px;
+      height: 20px;
       color: white;
+      padding: 2px 10px;
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.2s;
     }
   </style>
 </head>
@@ -141,80 +152,123 @@
     <p>We would love to see all of your favorite moments, so please feel free to upload as many images or videos as you'd like.</p>
     <p>Thank you!</p>
   </div>
+
   <div class="form-entry-container">
-    <h2 class="instruct">Upload Files</h3>
-    <form id="uploadForm">
-      <input type="hidden" id="authKey" name="authKey" value="{{authKey}}">
-      <label for="fileUpload" class="styled-upload-button">Select File(s)</label>
-      <input type="file" id="fileUpload" name="files" multiple style="display: none;" />
-    </form>
-    <button type="submit" id="uploadButton">Upload</button>
-    <div class="progress-container">
-      <div class="progress-bar" id="progressBar"></div>
-    </div>
-    <pre id="fileList" class="file-list-display"></pre>
+    <h2 class="instruct">Upload Files</h2>
+    <input type="hidden" id="authKey" name="authKey" value="{{authKey}}" />
+
+    <label for="fileUpload" class="styled-upload-button">Select File(s)</label>
+    <input type="file" id="fileUpload" name="files" accept="image/*,video/*" multiple style="display: none;" />
+
+    <div id="uploadList"></div>
+    <button type="button" id="uploadButton">Start Upload</button>
+    <button type="button" id="pauseButton" class="styled-upload-button" style="display: none;">Pause</button>
+    <button type="button" id="resumeButton" class="styled-upload-button" style="display: none;">Resume</button>
   </div>
 
-  <script>
-    const loader = document.getElementById("loader");
-    const overlay = document.getElementById("overlay");
-    const fUpload = document.getElementById("fileUpload");
-    const fList = document.getElementById("fileList");
-    const uploadBtn = document.getElementById("uploadButton");
-    const progressBar = document.getElementById("progressBar");
-    fUpload.addEventListener("change", () => {
-      const files = [...fUpload.files];
-      if (files.length === 0) {
-        fList.textContent = "";
-        uploadBtn.disabled = true;
-      } else {
-        fList.textContent = files.map(f => `${f.name},`).join("\n");
-        uploadBtn.disabled = false;
-        fList.style.display = "block";
-      }
+<script type="module">
+  import { prepareChunks } from './public/chunked-upload.js';
+
+  const MAX_WORKERS = 4;
+  const fileInput = document.getElementById("fileUpload");
+  const uploadButton = document.getElementById("uploadButton");
+  const pauseButton = document.getElementById("pauseButton");
+  const resumeButton = document.getElementById("resumeButton");
+  const uploadList = document.getElementById("uploadList");
+  const authKey = document.getElementById("authKey")?.value.trim();
+
+  let uploadQueue = [];
+  let paused = false;
+  
+  fileInput.addEventListener("change", async () => {
+    const files = [...fileInput.files];
+    uploadList.innerHTML = "";
+    const { chunks, manifest } = await prepareChunks(files);
+    const id = manifest.sha256;
+    uploadQueue = [{ id, file: files[0], chunks, manifest, uploaded: new Set() }];
+
+    for (const task of uploadQueue) {
+      const entry = document.createElement("div");
+      entry.classList.add("progress-container");
+      entry.innerHTML = `
+        <div class="progress-thumb">
+          <img src="" class="thumb" alt="" />
+          <div class="progress-bar" id="bar-${task.id}">Waiting...</div>
+        </div>
+      `;
+      uploadList.appendChild(entry);
+    }
+  });
+
+  uploadButton.addEventListener("click", async () => {
+    if (!authKey || uploadQueue.length === 0) return;
+    paused = false;
+    uploadButton.disabled = true;
+    uploadButton.style.display = "none";
+    [pauseButton, resumeButton].forEach(button => {
+      button.style.display = "block";
     });
-    uploadBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
 
-      const files = [...fUpload.files];
-      const authKey = document.getElementById("authKey").value.trim();
+    const pool = Array(MAX_WORKERS).fill(null);
+    let nextIndex = 0;
 
-      if (!authKey || files.length === 0) {
-        alert("Please enter your key and select at least one file.");
-        return;
+    async function worker() {
+      while (nextIndex < uploadQueue.length) {
+        if (paused) return;
+        const task = uploadQueue[nextIndex++];
+        const bar = document.getElementById(`bar-${task.id}`);
+        const status = await fetch(`/upload-status?hash=${task.manifest.sha256}`).then(r => r.json());
+        const received = new Set(status.received || []);
+
+        for (let j = 0; j < task.chunks.length; j++) {
+          if (paused) return;
+          if (received.has(j)) continue;
+
+          const formData = new FormData();
+          formData.append("authKey", authKey);
+          formData.append("fileHash", task.manifest.sha256);
+          formData.append("chunkIndex", j);
+          formData.append("totalChunks", task.chunks.length);
+          formData.append("originalName", task.file.name);
+          formData.append("isVideo", task.file.type.startsWith("video") ? "true" : "false");
+          formData.append("chunk", task.chunks[j]);
+
+          let retries = 0;
+          while (retries < 3) {
+            try {
+              const res = await fetch("/upload-chunk", { method: "POST", body: formData });
+              if (!res.ok) throw new Error("Chunk upload failed");
+              break;
+            } catch (e) {
+              retries++;
+            }
+          }
+
+          const percent = Math.round(((j + 1 + received.size) / task.chunks.length) * 100);
+          bar.style.width = `${percent}%`;
+          bar.textContent = `${task.file.name} — ${percent}%`;
+        }
       }
-      progressBar.style.display = "block";
-      const formData = new FormData();
-      formData.append("authKey", authKey);
-      files.forEach(file => formData.append("files", file));
+    }
 
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/upload");
+    await Promise.all(pool.map(() => worker()));
+    uploadButton.disabled = false;
+    if (!paused)
+    {
+      uploadButton.style.display = "block";
+      [pauseButton,resumeButton].forEach(button => {
+        button.style.display = "none";
+      });
+    }
+  });
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          progressBar.style.width = percent + "%";
-          progressBar.h
-          progressBar.textContent = "Loading..." + percent + "%";
-        }
-      };
+  pauseButton.addEventListener("click", () => {
+    paused = true;
+  });
 
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          alert("Upload complete!");
-          fUpload.value = "";
-          fList.textContent = "";
-          progressBar.style.width = "0%";
-          progressBar.textContent = "";
-        } else {
-          alert("Upload failed: " + xhr.responseText);
-        }
-      };
-
-      xhr.onerror = () => alert("Error uploading files.");
-      xhr.send(formData);
-    });
-  </script>
+  resumeButton.addEventListener("click", () => {
+    if (paused) uploadButton.click();
+  });
+</script>
 </body>
 </html>

@@ -1,12 +1,16 @@
 // server.js
-import fastify from 'fastify';
 import multipart from '@fastify/multipart';
 import staticPlugin from '@fastify/static';
-import path from 'path';
-import fs from 'fs';
 import crypto from 'crypto';
 import csv from 'csv-parser';
+import fastify from 'fastify';
+import fs from 'fs';
+import path from 'path';
+import { pipeline } from 'stream/promises';
 import { fileURLToPath } from 'url';
+import { registerChunkRoutes } from './backend/chunkHandler.js';
+import { startCleanupService } from './backend/cleanup.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,6 +18,23 @@ const __dirname = path.dirname(__filename);
 const uploadDir = '/mnt/ssd/FileUploadServer/uploads';
 const authFile = '/mnt/ssd/FileUploadServer/users.csv';
 const logFile = '/mnt/ssd/FileUploadServer/upload_log.json';
+const tmpUploadDir = path.join(uploadDir, 'tmp');
+const chunkDir = path.join(uploadDir, 'tmp_chunks');
+const manifestDir = path.join(__dirname, 'manifests');
+
+const ensureDirExists = (dirPath) => {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+};
+
+ensureDirExists(chunkDir);
+ensureDirExists(manifestDir);
+ensureDirExists(tmpUploadDir)
+
+startCleanupService({
+  chunkDir,
+  manifestDir,
+  mergedDir: path.join(uploadDir, 'merged'),
+});
 
 const app = fastify({ logger: true });
 
@@ -23,6 +44,8 @@ await app.register(staticPlugin, {
   root: path.join(__dirname, 'public'),
   prefix: '/',
 });
+
+await registerChunkRoutes(app, users, getFileHash, getNextFileName, uploadLog, logFile);
 
 // Helper: Load users into memory
 const users = {};
@@ -59,29 +82,128 @@ const getNextFileName = (name, ext, isVideo) => {
   } while (fs.existsSync(newPath));
   return newPath;
 };
+const getChunkPath = (uploadId, index) =>
+  path.join(chunkDir, `${uploadId}_chunk_${index}`);
+
+const getManifestPath = (uploadId) =>
+  path.join(manifestDir, `${uploadId}.json`);
+
+const assembleChunks = async (uploadId, totalChunks, finalPath) => {
+  const writeStream = fs.createWriteStream(finalPath);
+
+  for (let i = 0; i < totalChunks; i++) {
+    const chunkPath = getChunkPath(uploadId, i);
+    if (!fs.existsSync(chunkPath)) {
+      throw new Error(`Missing chunk #${i}`);
+    }
+
+    const readStream = fs.createReadStream(chunkPath);
+    await pipeline(readStream, writeStream);
+    fs.unlinkSync(chunkPath); // clean up
+  }
+};
 
 // Get index
 app.get('/', async (req, reply) => {
-  const fs = require('fs').promises;
-  const path = require('path');
-
-  try
-  {
-    const htmlPath = path.join(__dirname, 'index.html');
-    let html = await fs.readFile(htmlPath, 'utf-8');
+  try {
+    const htmlPath = path.join(__dirname, 'public', 'index.html');
+    let html = await fs.promises.readFile(htmlPath, 'utf-8');
 
     const authKey = req.query.authKey || '';
     html = html.replace('{{authKey}}', authKey);
 
     reply.type('text/html').send(html);
-  }
-  catch (err)
-  {
-    reply.code(500).send('Error loading page: '+err)
+  } catch (err) {
+    reply.code(500).send('Error loading page: ' + err);
   }
 });
 
-// Upload endpoint
+// Get status of chunk uploads
+app.get('/upload-status', async (req, reply) => {
+  const { hash } = req.query;
+  if (!hash) return reply.status(400).send({ error: 'Missing file hash' });
+
+  const manifestPath = getManifestPath(hash);
+  if (!fs.existsSync(manifestPath)) {
+    return reply.send({ received: [] }); // nothing uploaded yet
+  }
+
+  try {
+    const manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf-8'));
+    reply.send({ received: manifest.received || [] });
+  } catch (err) {
+    reply.status(500).send({ error: 'Failed to read manifest' });
+  }
+});
+
+// Upload endpoints
+app.post('/upload-chunk', async (req, reply) => {
+  const parts = req.parts();
+  let uploadId = null;
+  let chunkIndex = null;
+
+  for await (const part of parts) {
+    if (part.type === 'field') {
+      if (part.fieldname === 'uploadId') uploadId = part.value.trim();
+      if (part.fieldname === 'chunkIndex') chunkIndex = parseInt(part.value, 10);
+    } else if (part.type === 'file') {
+      if (!uploadId || chunkIndex === null) {
+        return reply.status(400).send({ error: 'Missing uploadId or chunkIndex' });
+      }
+
+      const tmpPath = getChunkPath(uploadId, chunkIndex);
+      const stream = fs.createWriteStream(tmpPath);
+      await part.file.pipe(stream);
+      await new Promise(r => stream.on('finish', r));
+    }
+  }
+
+  reply.send({ received: true });
+});
+
+app.post('/upload-manifest', async (req, reply) => {
+  const parts = req.parts();
+  let manifest = null;
+
+  for await (const part of parts) {
+    if (part.type === 'field' && part.fieldname === 'manifest') {
+      try {
+        manifest = JSON.parse(part.value);
+      } catch (err) {
+        return reply.status(400).send({ error: 'Invalid manifest JSON' });
+      }
+    }
+  }
+
+  if (!manifest || !manifest.uploadId || !manifest.totalChunks || !manifest.filename || !manifest.authKey) {
+    return reply.status(400).send({ error: 'Missing manifest fields' });
+  }
+
+  const { uploadId, totalChunks, filename, authKey } = manifest;
+
+  if (!users[authKey]) return reply.status(403).send({ error: 'Invalid authKey' });
+  const user = users[authKey];
+  const ext = path.extname(filename);
+  const isVideo = manifest.isVideo;
+
+  const finalPath = getNextFileName(user, ext, isVideo);
+
+  try {
+    await assembleChunks(uploadId, totalChunks, finalPath);
+    uploadLog.push({
+      authKey,
+      fullName: user,
+      originalName: filename,
+      savedName: path.basename(finalPath),
+      timestamp: new Date().toISOString(),
+      hash: '', // optional: you can compute full file hash here
+    });
+    fs.writeFileSync(logFile, JSON.stringify(uploadLog, null, 2));
+    reply.send({ success: true, savedAs: path.basename(finalPath) });
+  } catch (err) {
+    reply.status(500).send({ error: 'Assembly failed: ' + err.message });
+  }
+});
 app.post('/upload', async (req, reply) => {
   const parts = req.parts();
   let authKey = null;
@@ -106,7 +228,7 @@ app.post('/upload', async (req, reply) => {
     const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.ogv'];
     const ext = path.extname(part.filename);
     const isVideo = part.mimetype.startsWith('video/') || videoExtensions.includes(ext.toLowerCase());
-    const tmpPath = path.join('/tmp', `${Date.now()}_${part.filename}`);
+    const tmpPath = path.join(tmpUploadDir, `${Date.now()}_${part.filename}`);
     const tmpStream = fs.createWriteStream(tmpPath);
 
     await part.file.pipe(tmpStream);
@@ -122,7 +244,15 @@ app.post('/upload', async (req, reply) => {
     }
 
     const finalPath = getNextFileName(user, ext, isVideo);
-    fs.renameSync(tmpPath, finalPath);
+    try
+    {
+      fs.renameSync(tmpPath, finalPath);
+    } catch (err)
+    {
+      // fallback if rename fails unexpectedly
+      fs.copyFileSync(tmpPath, finalPath);
+      fs.unlinkSync(tmpPath);
+    }
 
     uploadLog.push({
       authKey,
