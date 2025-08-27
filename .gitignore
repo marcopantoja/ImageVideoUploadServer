@@ -1,6 +1,8 @@
-uploads/*
+uploads
 node_modules
+public
 *.config.js
 log.json
 *.csv
 *.bat
+upload_log.json
