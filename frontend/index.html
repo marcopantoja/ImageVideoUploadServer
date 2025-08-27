@@ -1,16 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Upload your favorite photos and videos to share your memories with us.">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Upload your favorite photos and videos to share your memories with us." />
   <title>Photo & Video Upload</title>
-  <link rel="icon" href="/favicon.ico" sizes="any">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180x180.png">
-  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Ponomar&family=Scope+One&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
+
+  <!-- Icons & Fonts -->
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon-180x180.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Ponomar&family=Scope+One&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/style.css" />
+
+  <!-- Preload secondary module -->
+  <link rel="modulepreload" href="/chunked-upload.js" />
 </head>
 <body>
   <div class="form-heading-container">
@@ -19,24 +26,65 @@
     <p>Thank you!</p>
   </div>
 
-  <div class="form-entry-container">
-    <h2 class="instruct">Upload Files</h2>
+  <div class="form-entry-container" aria-describedby="upload-help">
     <input type="hidden" id="authKey" name="authKey" value="{{authKey}}" />
 
-    <label for="fileUpload" class="styled-upload-button">Select File(s)</label>
-    <input type="file" id="fileUpload" name="files" accept="image/*,video/*" multiple style="display: none;" />
+    <p id="upload-help" class="hint">
+      You can drag &amp; drop, click to choose, paste from clipboard, or use your camera on mobile.
+    </p>
 
-    <div id="uploadList"></div>
-    <button type="button" id="uploadButton">Start Upload</button>
-    <button type="button" id="pauseButton" class="styled-upload-button" style="display: none;">Pause</button>
-    <button type="button" id="resumeButton" class="styled-upload-button" style="display: none;">Resume</button>
-  </div>
+    <!-- Drop Zone -->
+    <div id="dropZone"
+         class="drop-zone"
+         role="button"
+         tabindex="0"
+         aria-label="Drop files here or press Enter to choose files">
+      <div class="dz-instructions">
+        <strong>Drop files here</strong>
+        <span>or click to choose</span>
+        <small>(You can also paste from clipboard)</small>
+      </div>
+    </div>
 
-<script type="module" src="/main.js" defer></script>
-<noscript>
-  <div style="padding: 2em; background: #fffbe6; color: #333; text-align: center;">
-    This site requires JavaScript to function. Please enable JavaScript in your browser.
-  </div>
-</noscript>
+    <!-- Pickers + Controls -->
+    <div class="picker-row">
+      <div class="controls-row">
+        <button type="button" id="chooseButton"  class="styled-upload-button">Select File(s)</button>
+        <button type="button" id="cameraButton"  class="styled-upload-button">Use Camera</button>
+
+        <!-- Shown/hidden by JS based on queue/upload state -->
+        <button type="button" id="uploadButton" class="styled-upload-button" style="display:none">Upload</button>
+        <button type="button" id="pauseButton"  class="styled-upload-button" style="display:none">Pause</button>
+        <button type="button" id="resumeButton" class="styled-upload-button" style="display:none">Resume</button>
+      </div>
+    </div>
+
+    <!-- Hidden inputs triggered by the buttons above -->
+    <input type="file"
+           id="fileUpload"
+           name="files"
+           accept="image/*,video/*,.heic,.heif"
+           multiple
+           style="display:none" />
+    <input type="file"
+           id="cameraInput"
+           accept="image/*,video/*,.heic,.heif"
+           capture="environment"
+           multiple
+           style="display:none" />
+          </div>
+    <!-- Live list of selected files (thumb + name + progress) -->
+    <div class="hidden" id="uploadListWrapper">
+      <div id="uploadList" aria-live="polite"></div>
+    </div>
+
+  <!-- App module -->
+  <script type="module" src="/main.js"></script>
+
+  <noscript>
+    <div style="padding:2em;background:#fffbe6;color:#333;text-align:center;">
+      This site requires JavaScript to function. Please enable JavaScript in your browser.
+    </div>
+  </noscript>
 </body>
 </html>
